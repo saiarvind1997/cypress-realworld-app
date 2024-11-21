@@ -1,110 +1,76 @@
 pipeline {
-    agent any
-
-    environment {
-        NODE_VERSION = '18.17.0'
-        YARN_VERSION = '1.22.19'
-        NODE_PATH = "${WORKSPACE}/node-v${NODE_VERSION}-linux-x64/bin"
-        YARN_PATH = "${WORKSPACE}/yarn-v${YARN_VERSION}/bin"
-        PATH = "${NODE_PATH}:${YARN_PATH}:${env.PATH}"
+    agent {
+        docker {
+            image 'cypress/included:13.16.0'
+            args '-v $WORKSPACE:/e2e -w /e2e'
+        }
     }
 
     stages {
-        stage('Setup') {
-            steps {
-                script {
-                    sh '''
-                        set -e
-
-                        # Clean previous installations
-                        rm -rf node-* yarn-* yarn.tar.gz
-
-                        # Install Node.js
-                        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz | tar xz
-
-                        # Install Yarn
-                        curl -fsSL https://github.com/yarnpkg/yarn/releases/download/v${YARN_VERSION}/yarn-v${YARN_VERSION}.tar.gz | tar xz
-
-                        # Verify installations
-                        if ! ${NODE_PATH}/node --version || ! ${YARN_PATH}/yarn --version; then
-                            echo "Failed to install Node.js or Yarn"
-                            exit 1
-                        fi
-                    '''
-                }
-            }
-        }
-
         stage('Install Dependencies') {
             steps {
-                script {
-                    sh '''
-                        set -e
-                        yarn install --frozen-lockfile
-
-                        if [ ! -d "node_modules" ]; then
-                            echo "Dependencies installation failed"
-                            exit 1
-                        fi
-
-                        yarn db:seed:dev
-                    '''
-                }
+                sh 'yarn install --frozen-lockfile'
             }
         }
 
-        stage('Start App and Test') {
+        stage('Unit Tests') {
             steps {
-                script {
-                    sh '''
-                        set -e
+                sh 'yarn test:unit:headless'
+            }
+        }
 
-                        # Start the application
-                        yarn start:ci &
-                        APP_PID=$!
+        stage('Component Tests') {
+            steps {
+                sh 'CYPRESS_CRASH_REPORTS=0 yarn test:component:headless'
+            }
+        }
 
-                        # Wait for app to start (max 30 seconds)
-                        for i in $(seq 1 30); do
-                            if curl -s http://localhost:3000 > /dev/null; then
-                                break
-                            fi
-                            if [ $i -eq 30 ]; then
-                                echo "Application failed to start"
-                                exit 1
-                            fi
-                            sleep 1
-                        done
+        stage('E2E Tests') {
+            steps {
+                sh '''
+                    yarn db:seed:dev
+                    yarn start:ci &
+                    APP_PID=$!
 
-                        # Run tests in headless mode
-                        CYPRESS_CRASH_REPORTS=0 yarn test:headless
-                        TEST_EXIT_CODE=$?
+                    for i in $(seq 1 30); do
+                        if curl -s http://localhost:3000 > /dev/null; then
+                            break
+                        fi
+                        if [ $i -eq 30 ]; then
+                            echo "Application failed to start"
+                            exit 1
+                        fi
+                        sleep 1
+                    done
 
-                        # Kill the app and exit with test status
-                        kill $APP_PID || true
-                        exit $TEST_EXIT_CODE
-                    '''
-                }
+                    CYPRESS_CRASH_REPORTS=0 yarn test:e2e:headless
+                    TEST_EXIT_CODE=$?
+
+                    kill $APP_PID || true
+                    exit $TEST_EXIT_CODE
+                '''
             }
         }
     }
 
     post {
         always {
-            script {
-                sh '''
-                    pkill -f "yarn start:ci" || true
-                '''
-                cleanWs()
-            }
+            junit 'coverage/junit/**/*.xml'
+            publishHTML([
+                allowMissing: false,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'coverage',
+                reportFiles: 'index.html',
+                reportName: 'Coverage Report'
+            ])
+            sh 'pkill -f "yarn start:ci" || true'
+            cleanWs()
         }
         failure {
-            script {
-                sh '''
-                    mkdir -p logs
-                    yarn logs || true
-                '''
-                archiveArtifacts artifacts: 'logs/**', allowEmptyArchive: true
-            }
+            archiveArtifacts artifacts: 'cypress/videos/**, cypress/screenshots/**', allowEmptyArchive: true
+            sh 'mkdir -p logs && yarn logs || true'
+            archiveArtifacts artifacts: 'logs/**', allowEmptyArchive: true
         }
     }
 }
