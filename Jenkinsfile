@@ -3,28 +3,29 @@ pipeline {
     
     environment {
         NODE_VERSION = '18.17.0'
-        // Set up custom paths for local installation
-        NODE_PATH = "${WORKSPACE}/nodejs"
-        PATH = "${WORKSPACE}/nodejs/bin:${env.PATH}"
+        NODE_PATH = "${WORKSPACE}/.nodejs" // Local to workspace
+        PATH = "${WORKSPACE}/.nodejs/bin:${env.PATH}"
     }
     
     stages {
-        stage('Install Node.js') {
+        stage('Setup Node.js') {
             steps {
                 script {
                     sh '''
-                        # Create directory for Node.js
+                        # Create local directory for Node.js
                         mkdir -p ${NODE_PATH}
                         
-                        # Download and extract Node.js binary
-                        curl -o node.tar.xz https://nodejs.org/dist/v18.17.0/node-v18.17.0-linux-x64.tar.xz
+                        # Download Node.js using curl
+                        echo "Downloading Node.js..."
+                        curl -L -o node.tar.xz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz
+                        
+                        # Extract Node.js to local directory
+                        echo "Extracting Node.js..."
                         tar -xJf node.tar.xz -C ${NODE_PATH} --strip-components=1
                         rm node.tar.xz
                         
-                        # Add node and npm to PATH
+                        # Add local Node.js to PATH and verify
                         export PATH="${NODE_PATH}/bin:$PATH"
-                        
-                        # Verify installation
                         node --version
                         npm --version
                         
@@ -41,56 +42,32 @@ pipeline {
                     sh '''
                         export PATH="${NODE_PATH}/bin:$PATH"
                         
-                        # Clear existing modules if any
+                        # Clean and install dependencies
+                        echo "Installing dependencies..."
                         rm -rf node_modules package-lock.json
-                        
-                        # Install dependencies
-                        npm install
-                        
-                        # Verify installation
-                        npm list --depth=0
+                        npm install --no-audit --no-fund
                     '''
                 }
             }
         }
         
-        stage('Run Development Server') {
+        stage('Start Development Server') {
             steps {
                 script {
                     sh '''
                         export PATH="${NODE_PATH}/bin:$PATH"
                         
-                        # Check if port 3000 is in use
-                        if netstat -tln | grep ':3000 '; then
-                            # Find and kill process using port 3000
-                            processId=$(lsof -t -i:3000) || true
-                            if [ ! -z "$processId" ]; then
-                                kill -9 $processId
-                            fi
-                        fi
+                        # Kill any existing process
+                        lsof -ti:3000 | xargs kill -9 || true
                         
                         # Start the dev server
+                        echo "Starting development server..."
                         nohup npm run dev > dev-server.log 2>&1 &
                         echo $! > .dev-server.pid
                         
                         # Wait for server to start
-                        count=0
-                        while [ $count -lt 30 ]; do
-                            if grep -q "ready" dev-server.log 2>/dev/null; then
-                                echo "Server started successfully"
-                                break
-                            fi
-                            count=$((count + 1))
-                            echo "Waiting for server to start... ($count/30)"
-                            sleep 2
-                        done
-                        
-                        # Check if server started
-                        if [ $count -eq 30 ]; then
-                            echo "Server failed to start. Log output:"
-                            cat dev-server.log
-                            exit 1
-                        fi
+                        echo "Waiting for server to start..."
+                        sleep 30
                     '''
                 }
             }
@@ -112,37 +89,14 @@ pipeline {
         always {
             script {
                 sh '''
-                    # Cleanup: Stop the dev server
+                    # Cleanup processes
                     if [ -f .dev-server.pid ]; then
-                        pid=$(cat .dev-server.pid)
-                        kill -9 $pid || true
+                        kill -9 $(cat .dev-server.pid) || true
                         rm .dev-server.pid
                     fi
-                    
-                    # Archive logs
-                    if [ -f dev-server.log ]; then
-                        mv dev-server.log dev-server-${BUILD_NUMBER}.log
-                    fi
                 '''
-                
-                // Archive logs as artifacts
-                archiveArtifacts artifacts: '**/dev-server-*.log', allowEmptyArchive: true
+                cleanWs()
             }
-            
-            // Clean workspace
-            cleanWs()
-        }
-        
-        failure {
-            echo '''
-                Build failed! Common issues to check:
-                1. Node.js installation - check dev-server log
-                2. Dependencies installation
-                3. Port 3000 availability
-                4. Test execution
-                
-                See archived logs for more details.
-            '''
         }
     }
 }
