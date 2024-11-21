@@ -1,6 +1,6 @@
 pipeline {
     agent any
-    
+
     environment {
         NODE_VERSION = '18.17.0'
         YARN_VERSION = '1.22.19'
@@ -8,23 +8,23 @@ pipeline {
         YARN_PATH = "${WORKSPACE}/yarn-v${YARN_VERSION}/bin"
         PATH = "${NODE_PATH}:${YARN_PATH}:${env.PATH}"
     }
-    
+
     stages {
         stage('Setup') {
             steps {
                 script {
                     sh '''
                         set -e
-                        
+
                         # Clean previous installations
                         rm -rf node-* yarn-* yarn.tar.gz
-                        
+
                         # Install Node.js
                         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz | tar xz
-                        
+
                         # Install Yarn
                         curl -fsSL https://github.com/yarnpkg/yarn/releases/download/v${YARN_VERSION}/yarn-v${YARN_VERSION}.tar.gz | tar xz
-                        
+
                         # Verify installations
                         if ! ${NODE_PATH}/node --version || ! ${YARN_PATH}/yarn --version; then
                             echo "Failed to install Node.js or Yarn"
@@ -34,35 +34,35 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Install Dependencies') {
             steps {
                 script {
                     sh '''
                         set -e
                         yarn install --frozen-lockfile
-                        
+
                         if [ ! -d "node_modules" ]; then
                             echo "Dependencies installation failed"
                             exit 1
                         fi
-                        
+
                         yarn db:seed:dev
                     '''
                 }
             }
         }
-        
+
         stage('Start App and Test') {
             steps {
                 script {
                     sh '''
                         set -e
-                        
+
                         # Start the application
                         yarn start:ci &
                         APP_PID=$!
-                        
+
                         # Wait for app to start (max 30 seconds)
                         for i in $(seq 1 30); do
                             if curl -s http://localhost:3000 > /dev/null; then
@@ -74,11 +74,11 @@ pipeline {
                             fi
                             sleep 1
                         done
-                        
+
                         # Run tests in headless mode
                         CYPRESS_CRASH_REPORTS=0 yarn test:headless
                         TEST_EXIT_CODE=$?
-                        
+
                         # Kill the app and exit with test status
                         kill $APP_PID || true
                         exit $TEST_EXIT_CODE
@@ -87,7 +87,7 @@ pipeline {
             }
         }
     }
-    
+
     post {
         always {
             script {
