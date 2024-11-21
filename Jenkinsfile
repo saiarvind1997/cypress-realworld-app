@@ -17,12 +17,17 @@ pipeline {
                     sh '''
                         set -e
                         
-                        # Install system packages without sudo
-                        apt-get update
-                        apt-get install -y xvfb libgtk2.0-0 libnotify-dev libgconf-2-4 libnss3 libxss1 libasound2
-                        
                         # Clean previous installations
-                        rm -rf node-* yarn-* yarn.tar.gz
+                        rm -rf node-* yarn-* yarn.tar.gz xvfb
+
+                        # Download and extract Xvfb binary
+                        mkdir -p xvfb
+                        cd xvfb
+                        curl -L -o xvfb.deb http://ftp.debian.org/debian/pool/main/x/xorg-server/xvfb_1.20.11-1+deb11u4_amd64.deb
+                        ar x xvfb.deb
+                        tar xf data.tar.xz
+                        cd ..
+                        export PATH="${WORKSPACE}/xvfb/usr/bin:${PATH}"
                         
                         # Install Node.js
                         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz | tar xz
