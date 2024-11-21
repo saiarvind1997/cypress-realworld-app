@@ -21,6 +21,7 @@ pipeline {
                     sh '''
                         export PATH=$PWD/node-v16.18.0-linux-x64/bin:$PATH
                         npm install --legacy-peer-deps
+                        npm audit fix --force
                         nohup npm run dev &
                         npm run test:headless
                     '''
