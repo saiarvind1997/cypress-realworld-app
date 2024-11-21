@@ -20,8 +20,9 @@ pipeline {
                 script {
                     sh '''
                         export PATH=$PWD/node-v16.18.0-linux-x64/bin:$PATH
-                        npm install
-                        npm run cypress:run
+                        npm install --legacy-peer-deps
+                        nohup npm run dev &
+                        npm run test:headless
                     '''
                 }
             }
