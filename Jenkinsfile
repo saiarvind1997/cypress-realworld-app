@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     environment {
-        NODE_VERSION = '18.17.0'
+        NODE_VERSION = '16.18.0'  // Using the version recommended by Cypress RWA
         NODE_PATH = "${WORKSPACE}/.nodejs"
         PATH = "${WORKSPACE}/.nodejs/bin:${env.PATH}"
     }
@@ -12,76 +12,46 @@ pipeline {
             steps {
                 script {
                     sh '''
+                        rm -rf ${NODE_PATH}
                         mkdir -p ${NODE_PATH}
                         
-                        echo "Downloading Node.js..."
-                        curl -L -o node.tar.gz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz
+                        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+                        export NVM_DIR="$HOME/.nvm"
+                        [ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"
                         
-                        echo "Extracting Node.js..."
-                        tar -xzf node.tar.gz -C ${NODE_PATH} --strip-components=1
-                        rm node.tar.gz
+                        nvm install 16
+                        nvm use 16
                         
-                        export PATH="${NODE_PATH}/bin:$PATH"
                         node --version
                         npm --version
                     '''
                 }
             }
         }
-        
+
         stage('Install Dependencies') {
             steps {
                 script {
                     sh '''
-                        export PATH="${NODE_PATH}/bin:$PATH"
-                        
-                        echo "Installing dependencies..."
                         npm install
                         
-                        # Verify Cypress installation
-                        echo "Verifying Cypress installation..."
-                        npx cypress verify
+                        echo "Verifying Cypress binary installation..."
+                        ./node_modules/.bin/cypress verify
                     '''
                 }
             }
         }
-        
-        stage('Build App') {
+
+        stage('Run Tests') {
             steps {
                 script {
                     sh '''
-                        export PATH="${NODE_PATH}/bin:$PATH"
-                        npm run build
-                    '''
-                }
-            }
-        }
-        
-        stage('Start Backend') {
-            steps {
-                script {
-                    sh '''
-                        export PATH="${NODE_PATH}/bin:$PATH"
-                        echo "Starting backend server..."
-                        npm run start:api &
-                        echo $! > .backend-pid
-                        
-                        # Wait for backend to be ready
-                        echo "Waiting for backend to start..."
-                        sleep 30
-                    '''
-                }
-            }
-        }
-        
-        stage('Run Cypress Tests') {
-            steps {
-                script {
-                    sh '''
-                        export PATH="${NODE_PATH}/bin:$PATH"
+                        echo "Starting backend..."
+                        npm run start:api:ci &
+                        sleep 10
                         
                         echo "Running Cypress tests..."
-                        npm run test:headless
+                        npm run cypress:run
                     '''
                 }
             }
@@ -92,11 +62,8 @@ pipeline {
         always {
             script {
                 sh '''
-                    # Kill backend process if running
-                    if [ -f .backend-pid ]; then
-                        kill -9 $(cat .backend-pid) || true
-                        rm .backend-pid
-                    fi
+                    echo "Cleaning up processes..."
+                    pkill -f "npm run start:api:ci" || true
                 '''
                 cleanWs()
             }
