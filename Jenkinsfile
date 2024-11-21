@@ -2,14 +2,12 @@ pipeline {
     agent any
     
     stages {
-        stage('Setup Node.js') {
+        stage('Setup') {
             steps {
                 script {
                     sh '''
-                        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-                        export NVM_DIR="$HOME/.nvm"
-                        . "$NVM_DIR/nvm.sh"
-                        nvm install 16
+                        curl -fsSL https://nodejs.org/dist/v16.18.0/node-v16.18.0-linux-x64.tar.gz | tar xz
+                        export PATH=$PWD/node-v16.18.0-linux-x64/bin:$PATH
                         node --version
                         npm --version
                     '''
@@ -17,12 +15,11 @@ pipeline {
             }
         }
 
-        stage('Install & Test') {
+        stage('Test') {
             steps {
                 script {
                     sh '''
-                        export NVM_DIR="$HOME/.nvm"
-                        . "$NVM_DIR/nvm.sh"
+                        export PATH=$PWD/node-v16.18.0-linux-x64/bin:$PATH
                         npm install
                         npm run cypress:run
                     '''
