@@ -25,6 +25,9 @@ pipeline {
                         
                         echo "Yarn version:"
                         ${YARN_HOME}/bin/yarn --version
+
+                        apt-get install libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev libgconf-2-4 libnss3 libxss1 libasound2 libxtst6 xauth xvfb
+                        echo "GTK version:"
                     '''
                 }
             }
@@ -49,7 +52,7 @@ pipeline {
                         yarn db:seed:dev
                         
                         # Start app in CI mode and run tests
-                        yarn start:ci &
+                        nohup yarn start:ci &
                         sleep 30
                         yarn test:headless
                     '''
