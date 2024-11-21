@@ -7,7 +7,6 @@ pipeline {
         NODE_PATH = "${WORKSPACE}/node-v${NODE_VERSION}-linux-x64/bin"
         YARN_PATH = "${WORKSPACE}/yarn-v${YARN_VERSION}/bin"
         PATH = "${NODE_PATH}:${YARN_PATH}:${env.PATH}"
-        DISPLAY = ':99'
     }
     
     stages {
@@ -18,13 +17,7 @@ pipeline {
                         set -e
                         
                         # Clean previous installations
-                        rm -rf node-* yarn-* yarn.tar.gz xvfb
-
-                        # Download Xvfb standalone binary
-                        mkdir -p bin
-                        curl -L -o bin/Xvfb https://github.com/electron/electron/raw/main/shell/browser/resources/xvfb/Xvfb
-                        chmod +x bin/Xvfb
-                        export PATH="${WORKSPACE}/bin:${PATH}"
+                        rm -rf node-* yarn-* yarn.tar.gz
                         
                         # Install Node.js
                         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz | tar xz
@@ -37,16 +30,81 @@ pipeline {
                             echo "Failed to install Node.js or Yarn"
                             exit 1
                         fi
+                    '''
+                }
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                script {
+                    sh '''
+                        set -e
+                        yarn install --frozen-lockfile
                         
-                        # Start Xvfb
-                        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+                        if [ ! -d "node_modules" ]; then
+                            echo "Dependencies installation failed"
+                            exit 1
+                        fi
                         
-                        # Wait for Xvfb to start
-                        sleep 3
+                        yarn db:seed:dev
+                    '''
+                }
+            }
+        }
+        
+        stage('Start App and Test') {
+            steps {
+                script {
+                    sh '''
+                        set -e
+                        
+                        # Start the application
+                        yarn start:ci &
+                        APP_PID=$!
+                        
+                        # Wait for app to start (max 30 seconds)
+                        for i in $(seq 1 30); do
+                            if curl -s http://localhost:3000 > /dev/null; then
+                                break
+                            fi
+                            if [ $i -eq 30 ]; then
+                                echo "Application failed to start"
+                                exit 1
+                            fi
+                            sleep 1
+                        done
+                        
+                        # Run tests in headless mode
+                        CYPRESS_CRASH_REPORTS=0 yarn test:headless
+                        TEST_EXIT_CODE=$?
+                        
+                        # Kill the app and exit with test status
+                        kill $APP_PID || true
+                        exit $TEST_EXIT_CODE
                     '''
                 }
             }
         }
     }
-    # Rest of pipeline remains the same...
+    
+    post {
+        always {
+            script {
+                sh '''
+                    pkill -f "yarn start:ci" || true
+                '''
+                cleanWs()
+            }
+        }
+        failure {
+            script {
+                sh '''
+                    mkdir -p logs
+                    yarn logs || true
+                '''
+                archiveArtifacts artifacts: 'logs/**', allowEmptyArchive: true
+            }
+        }
+    }
 }
