@@ -6,22 +6,6 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        # Install system dependencies without sudo
-                        apt-get update
-                        apt-get install -y \
-                            libgtk2.0-0 \
-                            libgtk-3-0 \
-                            libgbm-dev \
-                            libnotify-dev \
-                            libgconf-2-4 \
-                            libnss3 \
-                            libxss1 \
-                            libasound2 \
-                            libxtst6 \
-                            xauth \
-                            xvfb \
-                            curl
-                            
                         # Install Node.js
                         curl -fsSL https://nodejs.org/dist/v18.17.0/node-v18.17.0-linux-x64.tar.gz | tar xz
                         export PATH=$PWD/node-v18.17.0-linux-x64/bin:$PATH
@@ -59,10 +43,10 @@ pipeline {
                         # Seed the database
                         yarn db:seed:dev
                         
-                        # Start app and run tests with xvfb
-                        xvfb-run --server-args="-screen 0 1280x720x24" yarn start:ci &
+                        # Start app and run tests
+                        yarn start:ci &
                         sleep 30
-                        xvfb-run --server-args="-screen 0 1280x720x24" yarn test:headless
+                        yarn test:headless
                     '''
                 }
             }
