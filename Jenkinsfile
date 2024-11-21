@@ -2,7 +2,9 @@ pipeline {
     agent any
     
     environment {
-        NODE_VERSION = '18.17.0'
+        NODE_HOME = "${WORKSPACE}/node-v18.17.0-linux-x64"
+        YARN_HOME = "${WORKSPACE}/yarn"
+        PATH = "${NODE_HOME}/bin:${YARN_HOME}/bin:${env.PATH}"
     }
     
     stages {
@@ -12,14 +14,17 @@ pipeline {
                     sh '''
                         # Download and install Node.js
                         curl -fsSL https://nodejs.org/dist/v18.17.0/node-v18.17.0-linux-x64.tar.gz | tar xz
-                        export PATH=$PWD/node-v18.17.0-linux-x64/bin:$PATH
                         
-                        # Install Yarn
-                        npm install -g yarn
+                        # Download and install Yarn
+                        curl -fsSL https://github.com/yarnpkg/yarn/releases/download/v1.22.19/yarn-v1.22.19.tar.gz | tar xz
+                        mv yarn-v1.22.19 yarn
                         
-                        # Show versions
-                        node --version
-                        yarn --version
+                        # Verify installations
+                        echo "Node version:"
+                        ${NODE_HOME}/bin/node --version
+                        
+                        echo "Yarn version:"
+                        ${YARN_HOME}/bin/yarn --version
                     '''
                 }
             }
@@ -29,23 +34,21 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        export PATH=$PWD/node-v18.17.0-linux-x64/bin:$PATH
+                        echo "Installing dependencies..."
                         yarn install
                     '''
                 }
             }
         }
 
-        stage('Build and Test') {
+        stage('Run Tests') {
             steps {
                 script {
                     sh '''
-                        export PATH=$PWD/node-v18.17.0-linux-x64/bin:$PATH
-                        
-                        # Seed the database with development data
+                        # Seed the database
                         yarn db:seed:dev
                         
-                        # Start the app in CI mode and run tests
+                        # Start app in CI mode and run tests
                         yarn start:ci &
                         sleep 30
                         yarn test:headless
@@ -57,7 +60,10 @@ pipeline {
     
     post {
         always {
-            sh 'pkill -f "start:ci" || true'
+            sh '''
+                echo "Cleaning up processes..."
+                pkill -f "start:ci" || true
+            '''
             cleanWs()
         }
     }
