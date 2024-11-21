@@ -1,43 +1,49 @@
 pipeline {
     agent any
     
-    environment {
-        NODE_HOME = "${WORKSPACE}/node-v18.17.0-linux-x64"
-        YARN_HOME = "${WORKSPACE}/yarn"
-        PATH = "${NODE_HOME}/bin:${YARN_HOME}/bin:${env.PATH}"
-    }
-    
     stages {
-        stage('Setup') {
+        stage('Install Dependencies') {
             steps {
                 script {
                     sh '''
-                        # Download and install Node.js
+                        # Install system dependencies without sudo
+                        apt-get update
+                        apt-get install -y \
+                            libgtk2.0-0 \
+                            libgtk-3-0 \
+                            libgbm-dev \
+                            libnotify-dev \
+                            libgconf-2-4 \
+                            libnss3 \
+                            libxss1 \
+                            libasound2 \
+                            libxtst6 \
+                            xauth \
+                            xvfb \
+                            curl
+                            
+                        # Install Node.js
                         curl -fsSL https://nodejs.org/dist/v18.17.0/node-v18.17.0-linux-x64.tar.gz | tar xz
+                        export PATH=$PWD/node-v18.17.0-linux-x64/bin:$PATH
                         
-                        # Download and install Yarn
-                        curl -fsSL https://github.com/yarnpkg/yarn/releases/download/v1.22.19/yarn-v1.22.19.tar.gz | tar xz
-                        mv yarn-v1.22.19 yarn
+                        # Install Yarn
+                        npm install -g yarn
                         
                         # Verify installations
                         echo "Node version:"
-                        ${NODE_HOME}/bin/node --version
-                        
+                        node --version
                         echo "Yarn version:"
-                        ${YARN_HOME}/bin/yarn --version
-
-                        apt-get install libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev libgconf-2-4 libnss3 libxss1 libasound2 libxtst6 xauth xvfb
-                        echo "GTK version:"
+                        yarn --version
                     '''
                 }
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Install Project Dependencies') {
             steps {
                 script {
                     sh '''
-                        echo "Installing dependencies..."
+                        export PATH=$PWD/node-v18.17.0-linux-x64/bin:$PATH
                         yarn install
                     '''
                 }
@@ -48,13 +54,15 @@ pipeline {
             steps {
                 script {
                     sh '''
+                        export PATH=$PWD/node-v18.17.0-linux-x64/bin:$PATH
+                        
                         # Seed the database
                         yarn db:seed:dev
                         
-                        # Start app in CI mode and run tests
-                        nohup yarn start:ci &
+                        # Start app and run tests with xvfb
+                        xvfb-run --server-args="-screen 0 1280x720x24" yarn start:ci &
                         sleep 30
-                        yarn test:headless
+                        xvfb-run --server-args="-screen 0 1280x720x24" yarn test:headless
                     '''
                 }
             }
@@ -63,10 +71,7 @@ pipeline {
     
     post {
         always {
-            sh '''
-                echo "Cleaning up processes..."
-                pkill -f "start:ci" || true
-            '''
+            sh 'pkill -f "start:ci" || true'
             cleanWs()
         }
     }
