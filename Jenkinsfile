@@ -7,6 +7,7 @@ pipeline {
         NODE_PATH = "${WORKSPACE}/node-v${NODE_VERSION}-linux-x64/bin"
         YARN_PATH = "${WORKSPACE}/yarn-v${YARN_VERSION}/bin"
         PATH = "${NODE_PATH}:${YARN_PATH}:${env.PATH}"
+        DISPLAY = ':99'
     }
     
     stages {
@@ -15,6 +16,10 @@ pipeline {
                 script {
                     sh '''
                         set -e  # Exit on any error
+                        
+                        # Install Xvfb and related dependencies
+                        sudo apt-get update
+                        sudo apt-get install -y xvfb libgtk2.0-0 libnotify-dev libgconf-2-4 libnss3 libxss1 libasound2
                         
                         # Clean previous installations
                         rm -rf node-* yarn-* yarn.tar.gz
@@ -30,6 +35,12 @@ pipeline {
                             echo "Failed to install Node.js or Yarn"
                             exit 1
                         fi
+                        
+                        # Start Xvfb
+                        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+                        
+                        # Wait for Xvfb to start
+                        sleep 3
                     '''
                 }
             }
@@ -76,7 +87,7 @@ pipeline {
                             sleep 1
                         done
                         
-                        # Run tests and store exit code
+                        # Run tests with Xvfb
                         yarn test:headless
                         TEST_EXIT_CODE=$?
                         
@@ -92,7 +103,10 @@ pipeline {
     post {
         always {
             script {
-                sh 'pkill -f "yarn start:ci" || true'
+                sh '''
+                    pkill -f "yarn start:ci" || true
+                    pkill Xvfb || true
+                '''
                 cleanWs()
             }
         }
