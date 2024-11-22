@@ -59,9 +59,9 @@ pipeline {
                 script {
                     try {
                         sh '''
-                            yarn db:seed:dev
-                            yarn prestart:ci
-                            yarn start:ci &
+                            // yarn db:seed:dev
+                            // yarn prestart:ci
+                            npm run dev
                             sleep 30
                             yarn test:headless
                         '''
