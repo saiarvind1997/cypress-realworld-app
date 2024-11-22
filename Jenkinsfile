@@ -25,7 +25,7 @@ pipeline {
             steps {
                 sh '''
                     yarn db:seed:dev
-                    yarn start:ci &
+                    yarn start &
                     APP_PID=$!
                     for i in $(seq 1 30); do
                         if curl -s http://localhost:3000 > /dev/null; then
