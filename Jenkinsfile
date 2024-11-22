@@ -54,7 +54,8 @@ pipeline {
             steps {
                 sh '''
                     yarn db:seed:dev
-                    yarn start:ci &
+                    yarn test
+                    // yarn start:ci &
                     APP_PID=$!
                     
                     echo "Waiting for application to start..."
