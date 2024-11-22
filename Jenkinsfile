@@ -2,7 +2,7 @@ pipeline {
     agent {
         docker {
             image 'cypress/included:13.16.0'
-            args '-v $WORKSPACE:/e2e -w /e2e --entrypoint='
+            args '-v $WORKSPACE:/e2e -w /e2e --entrypoint='  // Added --entrypoint= here
         }
     }
     stages {
@@ -13,12 +13,12 @@ pipeline {
         }
         stage('Unit Tests') {
             steps {
-                sh 'yarn test:unit:ci'
+                sh 'yarn test:unit:headless'
             }
         }
         stage('Component Tests') {
             steps {
-                sh 'CYPRESS_CRASH_REPORTS=0 yarn test:component:ci'
+                sh 'CYPRESS_CRASH_REPORTS=0 yarn test:component:headless'
             }
         }
         stage('E2E Tests') {
@@ -27,22 +27,17 @@ pipeline {
                     yarn db:seed:dev
                     yarn start:ci &
                     APP_PID=$!
-                    
-                    echo "Waiting for application to start..."
                     for i in $(seq 1 30); do
-                        if node -e "fetch('http://localhost:3000').then(() => process.exit(0)).catch(() => process.exit(1))"; then
-                            echo "Application started successfully"
+                        if curl -s http://localhost:3000 > /dev/null; then
                             break
                         fi
                         if [ $i -eq 30 ]; then
                             echo "Application failed to start"
                             exit 1
                         fi
-                        echo "Attempt $i/30"
                         sleep 1
                     done
-                    
-                    CYPRESS_CRASH_REPORTS=0 yarn test:headless
+                    CYPRESS_CRASH_REPORTS=0 yarn test:e2e:headless
                     TEST_EXIT_CODE=$?
                     kill $APP_PID || true
                     exit $TEST_EXIT_CODE
@@ -52,18 +47,21 @@ pipeline {
     }
     post {
         always {
-            junit allowEmptyResults: true, testResults: 'coverage/junit/**/*.xml'
+            junit 'coverage/junit/**/*.xml'
+            publishHTML([
+                allowMissing: false,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'coverage',
+                reportFiles: 'index.html',
+                reportName: 'Coverage Report'
+            ])
             sh 'pkill -f "yarn start:ci" || true'
             cleanWs()
         }
         failure {
             archiveArtifacts artifacts: 'cypress/videos/**, cypress/screenshots/**', allowEmptyArchive: true
-            sh '''
-                mkdir -p logs
-                ps aux > logs/processes.log
-                free -h > logs/memory.log
-                df -h > logs/disk.log
-            '''
+            sh 'mkdir -p logs && yarn logs || true'
             archiveArtifacts artifacts: 'logs/**', allowEmptyArchive: true
         }
     }
