@@ -18,7 +18,7 @@ pipeline {
         }
         stage('Component Tests') {
             steps {
-                sh 'CYPRESS_CRASH_REPORTS=0 yarn test:component-ci'
+                sh 'CYPRESS_CRASH_REPORTS=0 yarn test:component:ci'
             }
         }
         stage('E2E Tests') {
