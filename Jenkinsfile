@@ -24,7 +24,7 @@ pipeline {
                 }
             }
             steps {
-                sh 'yarn test:unit'
+                sh 'yarn test:unit:ci'  // Using CI version of unit tests
             }
         }
 
@@ -37,16 +37,7 @@ pipeline {
                 }
             }
             steps {
-                sh '''
-                    yarn dev:all &
-                    sleep 30
-                    yarn cypress run --component
-                '''
-            }
-            post {
-                always {
-                    sh 'pkill -f "node" || true'
-                }
+                sh 'yarn test:component:ci'  // Using CI version of component tests
             }
         }
 
@@ -60,10 +51,15 @@ pipeline {
             }
             steps {
                 sh '''
-                    yarn db:seed
-                    yarn dev:all &
-                    sleep 30
-                    yarn cypress run
+                    # Setup and start the application in CI mode
+                    yarn prestart:ci
+                    yarn start:ci &
+                    
+                    # Wait for services
+                    sleep 45
+                    
+                    # Run E2E tests headless
+                    yarn test:headless
                 '''
             }
             post {
