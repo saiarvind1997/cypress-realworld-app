@@ -13,12 +13,12 @@ pipeline {
         }
         stage('Unit Tests') {
             steps {
-                sh 'yarn test:unit:headless'
+                sh 'yarn test:unit'
             }
         }
         stage('Component Tests') {
             steps {
-                sh 'CYPRESS_CRASH_REPORTS=0 yarn test:component:headless'
+                sh 'CYPRESS_CRASH_REPORTS=0 yarn test:component'
             }
         }
         stage('E2E Tests') {
