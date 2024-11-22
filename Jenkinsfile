@@ -1,12 +1,6 @@
 pipeline {
     agent any
 
-    environment {
-        CYPRESS_CRASH_REPORTS = '0'
-        NODE_OPTIONS = '--max-old-space-size=4096'
-        DEBUG = 'cypress:*'  // Enable Cypress debugging
-    }
-
     stages {
         stage('Install') {
             agent {
@@ -30,13 +24,7 @@ pipeline {
                 }
             }
             steps {
-                script {
-                    try {
-                        sh 'yarn test:unit:ci'
-                    } catch (Exception e) {
-                        unstable('Unit tests failed')
-                    }
-                }
+                sh 'yarn test:unit:ci'
             }
         }
 
@@ -63,7 +51,7 @@ pipeline {
             agent {
                 docker {
                     image 'cypress/included:13.16.0'
-                    args '--entrypoint='
+                    args '--entrypoint= --network=host'  // Add host networking
                     reuseNode true
                 }
             }
@@ -71,55 +59,53 @@ pipeline {
                 script {
                     try {
                         sh '''
-                            # Print environment for debugging
-                            echo "Node version:"
-                            node --version
-                            echo "NPM version:"
-                            npm --version
-                            echo "Yarn version:"
-                            yarn --version
-                            
-                            # Clean start
-                            pkill -f "node" || true
-                            
+                            # Install required system utilities
+                            apt-get update && apt-get install -y net-tools procps
+
                             # Setup test environment
                             echo "Setting up test environment..."
                             yarn db:seed:dev
-                            yarn predev:cognito:ci
                             
-                            # Start the app in debug mode
+                            # Start servers
                             echo "Starting application..."
-                            DEBUG=* yarn start:ci &
+                            yarn start:api &
+                            sleep 5
                             
-                            # Wait and verify services
+                            echo "Starting test proxy..."
+                            yarn start:react:proxy-server &
+                            
+                            # Wait for services to be up
                             echo "Waiting for services..."
-                            sleep 30
+                            for i in {1..30}; do
+                                if nc -z localhost 3001 && nc -z localhost 3002; then
+                                    echo "All services are up!"
+                                    break
+                                fi
+                                echo "Waiting for services... (Attempt $i/30)"
+                                sleep 2
+                            done
                             
-                            # Check if services are running
-                            echo "Checking services..."
+                            # Show running services
+                            echo "Running services:"
                             netstat -tulpn | grep LISTEN
                             
-                            # Run tests with detailed logging
+                            # Run tests
                             echo "Running Cypress tests..."
-                            yarn cypress run --browser chrome --config video=true --reporter-options "reportDir=cypress/reports" || {
-                                echo "Cypress tests failed. Checking logs..."
-                                cat cypress/reports/*.log || true
-                                cat ~/.npm/_logs/*-debug.log || true
-                                exit 1
-                            }
+                            yarn cypress run --config baseUrl=http://localhost:3002
                         '''
                     } catch (Exception e) {
-                        echo "Test execution failed with error: ${e.getMessage()}"
                         unstable('E2E tests failed')
                     } finally {
                         sh '''
                             echo "Collecting logs..."
-                            mkdir -p test-output
-                            cp -r cypress/reports/* test-output/ || true
-                            cp -r cypress/videos/* test-output/ || true
-                            cp -r cypress/screenshots/* test-output/ || true
+                            mkdir -p test-output/logs
+                            
+                            # Save application logs
+                            find . -name "*.log" -exec cp {} test-output/logs/ \\;
                             
                             echo "Cleaning up processes..."
+                            pkill -f "start:api" || true
+                            pkill -f "start:react:proxy-server" || true
                             pkill -f "node" || true
                             sleep 2
                             pkill -9 -f "node" || true
